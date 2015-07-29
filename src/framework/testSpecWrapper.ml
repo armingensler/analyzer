@@ -84,6 +84,219 @@ struct
   
 end
 
+type mySingleFlagState =
+  | FS_True
+  | FS_False
+  | FS_Both
+
+type 'd myTree = 
+  | MyTree_TF of 'd myTree * 'd myTree
+  | MyTree_Both of 'd myTree
+  | MyTree_None
+  | MyTree_Leaf of 'd 
+
+module MyTreePrintable (L:Printable.S)
+: Printable.S with type t = L.t myTree
+= 
+struct
+  
+  type t = L.t myTree
+  
+  let rec short i d = 
+    match d with
+    | MyTree_TF (t, f) -> "[ T -> " ^ short i t ^ ", F -> " ^ short i f ^ "]"
+    | MyTree_Both tf -> "[ TF -> " ^ short i tf ^ "]"
+    | MyTree_None -> "[]"
+    | MyTree_Leaf leaf -> L.short i leaf
+    
+  let name () = "MyTreePrintable" ^ (L.name ())
+  
+  include Printable.PrintSimple (struct type t' = t let short = short let name = name end)
+  
+  let compare = Pervasives.compare
+  
+  let rec equal x y = 
+    match (x, y) with
+    | (MyTree_TF (xtrue, xfalse), MyTree_TF (ytrue, yfalse)) -> equal xtrue ytrue && equal xfalse yfalse 
+    | (MyTree_Both xboth, MyTree_Both yboth) -> equal xboth yboth
+    | (MyTree_None, MyTree_None) -> true
+    | (MyTree_Leaf xleaf, MyTree_Leaf yleaf) -> L.equal xleaf yleaf
+    | _ -> false
+  
+  let rec hash d =
+    match d with
+    | MyTree_TF (t, f) -> hash t * 7 + hash f * 13 + 17
+    | MyTree_Both both -> hash both * 7 + 23
+    | MyTree_None -> 41
+    | MyTree_Leaf leaf -> L.hash leaf
+  
+end
+
+module MyTreeDom (L:Lattice.S)
+: Lattice.S with type t = L.t myTree
+= 
+struct
+  
+  include MyTreePrintable (L)
+  include Lattice.StdCousot (* ??? *)
+  
+  let for_all f tree =
+    let rec impl tree path =
+      begin match tree with
+      | MyTree_TF (t, f) -> impl t (path @ [FS_True]) && impl f (path @ [FS_False])
+      | MyTree_Both tf -> impl tf (path @ [FS_Both])
+      | MyTree_None -> true
+      | MyTree_Leaf leaf -> f leaf path
+      end in
+    impl tree []
+  
+  let exists f tree =
+    let rec impl tree path =
+      begin match tree with
+      | MyTree_TF (t, f) -> impl t (path @ [FS_True]) || impl f (path @ [FS_False])
+      | MyTree_Both tf -> impl tf (path @ [FS_Both])
+      | MyTree_None -> false
+      | MyTree_Leaf leaf -> f leaf path
+      end in
+    impl tree []
+    
+  let rec get tree path =
+    match (tree, path) with
+    | (MyTree_TF (t, f), true::xs) -> get t xs
+    | (MyTree_TF (t, f), false::xs) -> get f xs
+    | (MyTree_TF (t, f), []) -> failwith "MyTreeDom.get with too short fs"
+    | (MyTree_Both tf, x::xs) -> get tf xs
+    | (MyTree_Both tf, []) -> failwith "MyTreeDom.get with too short fs"
+    | (MyTree_None, _) -> None
+    | (MyTree_Leaf leaf, []) -> Some leaf
+    | (MyTree_Leaf leaf, _) -> failwith "MyTreeDom.get with too long fs"
+    
+  let rec contains tree path =
+    match (tree, path) with
+    | (MyTree_TF (t, f), FS_True::xs) -> contains t xs
+    | (MyTree_TF (t, f), FS_False::xs) -> contains f xs
+    | (MyTree_TF (t, f), FS_Both::xs) -> contains t xs && contains f xs
+    | (MyTree_TF (t, f), []) -> failwith "MyTreeDom.contains with too short fs"
+    | (MyTree_Both tf, x::xs) -> contains tf xs
+    | (MyTree_Both tf, []) -> failwith "MyTreeDom.contains with too short fs"
+    | (MyTree_None, _) -> false
+    | (MyTree_Leaf leaf, x::xs) -> failwith "MyTreeDom.contains with too long fs"
+    | (MyTree_Leaf leaf, []) -> true
+
+  let rec simplify_nonrec tree =
+    match tree with
+    | MyTree_TF (t, f) when equal t f -> MyTree_Both t
+    | _ -> d
+    
+  let rec simplify tree =
+    match tree with
+    | MyTree_TF (t, f) -> 
+      let st = simplify t in
+      let sf = simplify f in
+      if equal st sf then MyTree_Both st else MyTree_TF (st, sf)
+    | MyTree_Both tf -> MyTree_Both (simplify tf)
+    | MyTree_None -> MyTree_None
+    | MyTree_Leaf leaf -> MyTree_Leaf leaf
+
+  let rec restrict tree i value =
+    if i > 0 then begin
+      match tree with
+      | MyTree_TF (t, f) -> simplify_nonrec @@ MyTree_TF (restrict t (i - 1) value, restrict f (i - 1) value)
+      | MyTree_Both tf -> MyTree_Both (restrict tf (i - 1) value)
+      | MyTree_None -> MyTree_None
+      | MyTree_Leaf leaf -> failwith "Called MyTreeDom.restrict with inconsistent tree heights."
+    end else begin
+      match tree with
+      | MyTree_TF (t, f) -> 
+        if value 
+        then simplify_nonrec @@ MyTree_TF (t, MyTree_None) 
+        else simplify_nonrec @@ MyTree_TF (MyTree_None, f)
+      | MyTree_Both tf -> 
+        if value 
+        then simplify_nonrec @@ MyTree_TF (tf, MyTree_None) 
+        else simplify_nonrec @@ MyTree_TF (MyTree_None, tf)
+      | MyTree_None -> MyTree_None
+      | MyTree_Leaf leaf -> MyTree_Leaf leaf
+    end
+  
+  let leq xtree ytree =
+    
+    let rec leq_than_all_at_path tree d path = 
+      match tree with
+      
+      | MyTree_TF (t, f) ->
+        begin match path with
+        | FS_True::xs -> leq_than_all_at_path t d xs
+        | FS_False::xs -> leq_than_all_at_path f d xs
+        | FS_Both::xs -> leq_than_all_at_path t d xs && leq_than_all_at_path f d xs
+        | [] -> failwith "Called MyTreeDom.leq with inconsistent tree heights."
+        end
+        
+      | MyTree_Both tf ->
+        begin match path with
+        | FS_True::xs -> leq_than_all_at_path tf d xs
+        | FS_False::xs -> leq_than_all_at_path tf d xs
+        | FS_Both::xs -> leq_than_all_at_path tf d xs
+        | [] -> failwith "Called MyTreeDom.leq with inconsistent tree heights."
+        end      
+      
+      | MyTree_None -> false
+      
+      | MyTree_Leaf leaf ->
+        begin match path with
+        | [] -> L.leq d leaf
+        | _ -> failwith "Called MyTreeDom.leq with inconsistent tree heights."
+        end
+    
+      in  
+    for_all (leq_than_all_at_path ytree) xtree
+  
+  let rec join x y = 
+    match (x, y) with
+    | (MyTree_None, y) -> y
+    | (x, MyTree_None) -> x
+    | (MyTree_Leaf xleaf, MyTree_Leaf yleaf) -> MyTree_Leaf (L.join xleaf yleaf)
+    | (MyTree_Leaf xleaf, _) -> failwith "Called MyTreeDom.join with inconsistent tree heights."
+    | (_, MyTree_Leaf yleaf) -> failwith "Called MyTreeDom.join with inconsistent tree heights."
+    | (MyTree_TF (xt, xf), MyTree_TF (yt, yf)) -> simplify_nonrec @@ MyTree_TF (join xt yt, join xf yf)
+    | (MyTree_TF (xt, xf), MyTree_Both ytf) -> simplify_nonrec @@ MyTree_TF (join xt ytf, join xf ytf)
+    | (MyTree_Both xtf, MyTree_TF (yt, yf)) -> simplify_nonrec @@ MyTree_TF (join xtf yt, join xtf yf)
+    | (MyTree_Both xtf, MyTree_Both ytf) -> MyTree_Both (join xtf ytf)
+        
+  let rec meet x y = 
+    match (x, y) with
+    | (MyTree_None, _) -> MyTree_None
+    | (_, MyTree_None) -> MyTree_None
+    | (MyTree_Leaf xleaf, MyTree_Leaf yleaf) -> MyTree_Leaf (L.meet xleaf yleaf)
+    | (MyTree_Leaf xleaf, _) -> failwith "Called MyTreeDom.meet with inconsistent tree heights."
+    | (_, MyTree_Leaf yleaf) -> failwith "Called MyTreeDom.meet with inconsistent tree heights."
+    | (MyTree_TF (xt, xf), MyTree_TF (yt, yf)) -> simplify_nonrec @@ MyTree_TF (meet xt yt, meet xf yf)
+    | (MyTree_TF (xt, xf), MyTree_Both ytf) -> simplify_nonrec @@ MyTree_TF (meet xt ytf, meet xf ytf)
+    | (MyTree_Both xtf, MyTree_TF (yt, yf)) -> simplify_nonrec @@ MyTree_TF (meet xtf yt, meet xtf yf)
+    | (MyTree_Both xtf, MyTree_Both ytf) -> MyTree_Both (meet xtf ytf)    
+  
+  let bot () = MyTree_None
+  
+  let rec is_bot d = 
+    match d with
+    | MyTree_TF (t, f) -> is_bot t && is_bot f
+    | MyTree_Both tf -> is_bot tf
+    | MyTree_None -> true
+    | MyTree_Leaf leaf -> false
+  
+  let top () =
+    let rec impl n = if n = 0 then MyTree_Leaf (L.top ()) else MyTree_Both (f (n - 1)) in
+    impl num_flag_states    
+  
+  let rec is_top d = 
+    match d with
+    | MyTree_TF (t, f) -> is_top t && is_top f
+    | MyTree_Both tf -> is_top tf
+    | MyTree_None -> false
+    | MyTree_Leaf leaf -> L.is_top leaf
+  
+end
+
 module PpFlagDependent (S:Spec)
   : Spec with module D = MyDom (S.D)
           and module G = MyDom (S.G)
