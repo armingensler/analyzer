@@ -5,14 +5,11 @@ open Pretty
 let exp_to_string e = sprint 80 (Cil.d_exp () e)
 let lval_to_string e = sprint 80 (Cil.d_lval () e)
   
-let makeUniformList n x = 
-  let rec recfun i acc = if i = 0 then acc else recfun (i - 1) (x :: acc) in
-  recfun n []
-
-let get_list_index x xs =
-  let (n, _) = List.find (fun (i,y) -> y = x) @@ List.mapi (fun i y -> (i,y)) xs in
-  n
-
+let is_prefix prefix str = 
+  String.length str > String.length prefix && String.sub str 0 (String.length prefix) = prefix
+    
+let list_opt_map f xs =
+  List.map Option.get @@ List.filter Option.is_some @@ List.map f xs
     
 (* from mCP.ml : BEGIN *)
 
