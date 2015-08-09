@@ -8,82 +8,6 @@ open MyUtil
 let pp_vars = ["GOBLINT_PP_VAR__FLAG_A"; "GOBLINT_PP_VAR__FLAG_B"; "GOBLINT_PP_VAR__FLAG_C"]
 let num_pp_vars = List.length pp_vars
 
-let flag_states = 
-  let rec make n =
-    if n = 0 then [[]] else 
-      let f xs = [ true :: xs; false :: xs ] in
-      List.flatten @@ List.map f @@ make (n - 1)
-  in
-  make num_pp_vars
-  
-let num_flag_states = List.length flag_states
-
-let flag_state_to_string fstate =
-  let bool_to_string b = if b then "T" else "F" in 
-  String.concat "" @@ List.map bool_to_string fstate
-
-module MyPrintable (L:Printable.S)
-: Printable.S with type t = (bool list * L.t) list
-=
-struct
-  
-  type t = (bool list * L.t) list
-  
-  let short i ds = 
-    let elm_to_string (fs, d) = flag_state_to_string fs ^ " -> " ^ L.short i d in
-    "[" ^ (String.concat ", " @@ List.map elm_to_string ds) ^ "]"
-    
-  let name () = "MyDom" ^ (L.name ())
-  
-  include Printable.PrintSimple (struct type t' = t let short = short let name = name end)
-  
-  let compare = Pervasives.compare
-  
-  let equal = 
-    let fs_equal = List.for_all2 (fun x y -> x = y) in
-    let elm_equal (fs1, d1) (fs2, d2) = fs_equal fs1 fs2 && L.equal d1 d2 in
-    List.for_all2 elm_equal
-  
-  let hash =
-    let bool_to_hash b = if b then 2 else 3 in 
-    let fs_to_hash = List.fold_left (fun xs x -> xs + bool_to_hash x) 12345 in
-    let elm_to_string (fs, d) = fs_to_hash fs + L.hash d * 17 in
-    List.fold_left (fun xs x -> xs + elm_to_string x) 996699
-  
-  
-end
-
-module MyDom (L:Lattice.S)
-: Lattice.S with type t = (bool list * L.t) list
-=
-struct  
-  
-  include MyPrintable (L)
-  include Lattice.StdCousot
-  
-  let leq xs ys = 
-    List.for_all (fun (fs, d) -> List.mem_assoc fs ys && L.leq d (List.assoc fs ys)) xs 
-  
-  (* join element-wise *)
-  let join xs ys =
-    let grouped = MyUtil.group_assoc (xs @ ys) in
-    let join_all ds = List.fold_left L.join (L.bot ()) ds in
-    List.map (fun (fs, ds) -> fs, join_all ds) grouped
-    
-  (* meet element-wise, only fstates in both arguments are kept *)
-  let meet xs ys = 
-    List.concat @@ List.map (fun (fs, x) -> if List.mem_assoc fs ys then [(fs, L.meet x (List.assoc fs ys))] else []) xs
-  
-  let bot () = []
-  
-  let is_bot d = List.length d = 0
-  
-  let top () = List.map (fun fs -> (fs, L.top ())) flag_states
-  
-  let is_top d = (List.length d = num_flag_states) && List.for_all (fun (f,x) -> x = L.top ()) d
-  
-end
-
 type mySingleFlagState =
   | FS_True
   | FS_False
@@ -644,7 +568,7 @@ struct
     in
     let result = D.map handle_child ctx.local in
     
-    let dtree = D.mapSome (fun (x, y) path -> Some x) result in
+    let dtree = D.simplify @@ D.mapSome (fun (x, y) path -> Some x) result in
     let gtree = D.mapSome (fun (x, y) path -> Some y) result in
     
     (* get all varinfos in gtree *)
@@ -653,13 +577,13 @@ struct
       | None -> []
       | Some d -> List.map fst d
     in
-    let varinfos = List.flatten @@ D.to_list varinfo_collector gtree in
+    let varinfos = List.unique ~eq:Basetype.Variables.equal @@ List.flatten @@ D.to_list varinfo_collector gtree in
     
     (* get tree for each varinfo *)
     let get_varinfo_tree (var : varinfo) =
       let join_all gs = List.fold_left S.G.join (S.G.bot ()) gs in
       let joined leaf path = Some (join_all @@ List.map snd @@ List.filter (fun (v, g) -> Basetype.Variables.equal v var) leaf) in
-      D.mapSome joined gtree
+      G.simplify @@ D.mapSome joined gtree
     in
     let g_result = List.map (fun v -> v, get_varinfo_tree v) varinfos in
     
@@ -850,8 +774,7 @@ struct
     do_assign ctx (!assignAcc);
     
     result
-
-  (* TODO *)
+  
   let enter ctx r f args =
     print_endline "enter";
     
@@ -880,7 +803,7 @@ struct
       let nth = List.map (fun (path, ds) -> (path, List.nth ds n)) @@ List.filter (fun (path, ds) -> List.length ds > n) treelist in
       let nth_1 = List.map (fun (path, (ds_1, ds_2)) -> (path, ds_1)) nth in
       let nth_2 = List.map (fun (path, (ds_1, ds_2)) -> (path, ds_2)) nth in
-      (D.make_from_list nth_1, D.make_from_list nth_2)
+      (D.simplify @@ D.make_from_list nth_1, D.simplify @@ D.make_from_list nth_2)
     in
     let result = List.map get_nth @@ List.of_enum (0 -- (num - 1)) in
     

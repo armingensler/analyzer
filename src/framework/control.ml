@@ -420,9 +420,9 @@ struct
 
   let analyze file fs =
     if get_bool "ana.hashcons" then
-      analyze file fs (module (TestSpecWrapper.PpFlagDependent (DeadCodeLifter (HashconsLifter (PathSensitive2 (MCP.MCP2))))) : Spec)
+      analyze file fs (module (FlagDependent.PpFlagDependent (DeadCodeLifter (HashconsLifter (PathSensitive2 (MCP.MCP2))))) : Spec)
     else
-      analyze file fs (module (TestSpecWrapper.PpFlagDependent (DeadCodeLifter (PathSensitive2 (MCP.MCP2)))) : Spec)
+      analyze file fs (module (FlagDependent.PpFlagDependent (DeadCodeLifter (PathSensitive2 (MCP.MCP2)))) : Spec)
 end
 
 (** The main function to perform the selected analyses. *)
