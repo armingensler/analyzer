@@ -27,6 +27,12 @@ type 'd myTree =
   | MyTree_Both of 'd myTree
   | MyTree_Leaf of 'd option
 
+type 'd pathResult = 
+  | PathResult_ExactMatch of 'd
+  | PathResult_SplitRequired of int
+
+exception PathResultSplit of int
+
 module MyTree
 =
 struct
@@ -146,8 +152,8 @@ struct
       | (MyTree_Both xtf, MyTree_TF (yt, yf)) -> impl xtf yt (path @ [FS_True]); impl xtf yf (path @ [FS_False])
       | (MyTree_Both xtf, MyTree_Both ytf) -> impl xtf ytf (path @ [FS_Both])
       | (MyTree_Leaf xleaf, MyTree_Leaf yleaf) -> f xleaf yleaf path
-      | (MyTree_Leaf xleaf, _) -> failwith "Called MyTreePrintable.iter_2 with inconsistent tree height."
-      | (_, MyTree_Leaf yleaf) -> failwith "Called MyTreePrintable.iter_2 with inconsistent tree height."
+      | (MyTree_Leaf xleaf, _) -> failwith "Called MyTree.iter_2 with inconsistent tree height."
+      | (_, MyTree_Leaf yleaf) -> failwith "Called MyTree.iter_2 with inconsistent tree height."
     in
     impl xtree ytree []
 
@@ -160,8 +166,8 @@ struct
       | (MyTree_Both xtf, MyTree_TF (yt, yf)) -> impl xtf yt (path @ [FS_True]) && impl xtf yf (path @ [FS_False])
       | (MyTree_Both xtf, MyTree_Both ytf) -> impl xtf ytf (path @ [FS_Both])
       | (MyTree_Leaf xleaf, MyTree_Leaf yleaf) -> f xleaf yleaf path
-      | (MyTree_Leaf xleaf, _) -> failwith "Called MyTreePrintable.for_all_2 with inconsistent tree height."
-      | (_, MyTree_Leaf yleaf) -> failwith "Called MyTreePrintable.for_all_2 with inconsistent tree height."
+      | (MyTree_Leaf xleaf, _) -> failwith "Called MyTree.for_all_2 with inconsistent tree height."
+      | (_, MyTree_Leaf yleaf) -> failwith "Called MyTree.for_all_2 with inconsistent tree height."
     in
     impl xtree ytree []
 
@@ -174,10 +180,23 @@ struct
       | (MyTree_Both xtf, MyTree_TF (yt, yf)) -> MyTree_TF (impl xtf yt (path @ [FS_True]), impl xtf yf (path @ [FS_False]))
       | (MyTree_Both xtf, MyTree_Both ytf) -> MyTree_Both (impl xtf ytf (path @ [FS_Both]))
       | (MyTree_Leaf xleaf, MyTree_Leaf yleaf) -> MyTree_Leaf (f xleaf yleaf path)
-      | (MyTree_Leaf xleaf, _) -> failwith "Called MyTreePrintable.map_2 with inconsistent tree height."
-      | (_, MyTree_Leaf yleaf) -> failwith "Called MyTreePrintable.map_2 with inconsistent tree height."
+      | (MyTree_Leaf xleaf, _) -> failwith "Called MyTree.map_2 with inconsistent tree height."
+      | (_, MyTree_Leaf yleaf) -> failwith "Called MyTree.map_2 with inconsistent tree height."
     in
     impl xtree ytree []
+    
+  let rec zip_strict xtree ytree =
+    match (xtree, ytree) with
+    | (MyTree_TF (xt, xf), MyTree_TF (yt, yf)) -> MyTree_TF (zip_strict xt yt, zip_strict xf yf)
+    | (MyTree_TF (xt, xf), MyTree_Both ytf) -> MyTree_TF (zip_strict xt ytf, zip_strict xf ytf)
+    | (MyTree_Both xtf, MyTree_TF (yt, yf)) -> MyTree_TF (zip_strict xtf yt, zip_strict xtf yf)
+    | (MyTree_Both xtf, MyTree_Both ytf) -> MyTree_Both (zip_strict xtf ytf)
+    | (MyTree_Leaf (Some xleaf), MyTree_Leaf (Some yleaf)) -> MyTree_Leaf (Some (xleaf, yleaf))
+    | (MyTree_Leaf (Some xleaf), MyTree_Leaf None) -> MyTree_Leaf None
+    | (MyTree_Leaf None, MyTree_Leaf (Some yleaf)) -> MyTree_Leaf None
+    | (MyTree_Leaf None, MyTree_Leaf None) -> MyTree_Leaf None
+    | (MyTree_Leaf xleaf, _) -> failwith "Called MyTree.zip_strict with inconsistent tree height."
+    | (_, MyTree_Leaf yleaf) -> failwith "Called MyTree.zip_strict with inconsistent tree height."
   
 end
 
@@ -354,6 +373,20 @@ struct
     | (MyTree_Leaf None, []) -> L.bot ()
     | (MyTree_Leaf leaf, _) -> failwith "MyTreePrintable.get with too long fs"
     
+  let get_at_path tree path =
+    let rec impl tree path i =
+      match (tree, path) with
+      | (MyTree_TF (t, f), FS_True::xs) -> impl t xs (i + 1)
+      | (MyTree_TF (t, f), FS_False::xs) -> impl f xs (i + 1)
+      | (MyTree_TF (t, f), FS_Both::xs) -> PathResult_SplitRequired i
+      | (MyTree_TF (t, f), []) -> failwith "MyTreePrintable.get with too short fs"
+      | (MyTree_Both tf, x::xs) -> impl tf xs (i + 1)
+      | (MyTree_Both tf, []) -> failwith "MyTreePrintable.get with too short fs"
+      | (MyTree_Leaf (Some leaf), []) -> PathResult_ExactMatch (leaf)
+      | (MyTree_Leaf None, []) -> PathResult_ExactMatch (L.bot ())
+      | (MyTree_Leaf leaf, _) -> failwith "MyTreePrintable.get with too long fs"
+    in impl tree path 0
+    
   let make_from_list xs =
     List.fold_left join (bot ()) @@ List.map (fun (path, d) -> make_path_tree path (Some d)) xs
     
@@ -380,7 +413,11 @@ struct
     (assign_acc : (mySingleFlagState list * string option * lval * exp) list ref) =
     
     let rec ask q = S.query ctx' q
-    and global v = G.joined_fs_path (ctx.global v) path (* !!! TODO !!! *)
+    
+    and global v = 
+      match G.get_at_path (ctx.global v) path with
+      | PathResult_ExactMatch result -> result
+      | PathResult_SplitRequired idx -> raise (PathResultSplit idx)
     
     and spawn v d = spawn_acc := (path, v, d) :: !spawn_acc
     and split d e b = split_acc := (path, d, e, b) :: !split_acc
@@ -401,10 +438,6 @@ struct
     in
     
     ctx'
-    
-  (*let fstates_from_ctx ctx = 
-    let (fs, _) = List.split ctx.local in
-    fs*)
 
   let name = S.name^" pp_flag_dependent"
   
@@ -551,6 +584,29 @@ struct
   let do_assign ctx (xs : (mySingleFlagState list * string option * lval * exp) list) =
     if List.length xs > 0 then failwith "This should never be called." else ()
     
+  let execute_for_each_child f d = 
+    
+    let rec impl tree path i =
+      begin match tree with
+      | MyTree_TF (t, f) -> 
+          let rt = impl t (path @ [FS_True]) (i + 1) in
+          let rf = impl f (path @ [FS_False]) (i + 1) in
+          MyTree_TF (rt, rf)
+      | MyTree_Both tf -> 
+        begin 
+          try MyTree_Both (impl tf (path @ [FS_Both]) (i + 1)) 
+          with
+          | PathResultSplit split_idx when split_idx = i ->
+            print_endline ("split occurred @ " ^ string_of_int i);
+            impl (MyTree_TF (tf, tf)) path i
+        end
+      | MyTree_Leaf (Some leaf) -> MyTree_Leaf (Some (f leaf path))
+      | MyTree_Leaf None -> MyTree_Leaf None
+      end 
+    in
+    
+    impl d [] 0
+    
   let sync ctx : (D.t * (varinfo * G.t) list)  =
     print_endline "sync";
     
@@ -559,14 +615,9 @@ struct
     let sidegAcc = ref [] in 
     let assignAcc = ref [] in 
     
-    let handle_child leaf path = 
-      match leaf with
-      | Some d -> 
-        let dd = S.sync (child_ctx d path ctx spawnAcc splitAcc sidegAcc assignAcc) in
-        Some dd
-      | None -> None      
-    in
-    let result = D.map handle_child ctx.local in
+    (* execute child function for all children *)
+    let handle_child d path = S.sync (child_ctx d path ctx spawnAcc splitAcc sidegAcc assignAcc) in
+    let result = execute_for_each_child handle_child ctx.local in
     
     let dtree = D.simplify @@ D.mapSome (fun (x, y) path -> Some x) result in
     let gtree = D.mapSome (fun (x, y) path -> Some y) result in
@@ -602,12 +653,15 @@ struct
     let sidegAcc = ref [] in
     let assignAcc = ref [] in
     
+    let handle_child d path = S.query (child_ctx d path ctx spawnAcc splitAcc sidegAcc assignAcc) q in
+    let resultTree = execute_for_each_child handle_child ctx.local in
+    
     let join_leaf acc leaf path =
       match leaf with
-      | Some d -> Queries.Result.join acc (S.query (child_ctx d path ctx spawnAcc splitAcc sidegAcc assignAcc) q)
+      | Some d -> Queries.Result.join acc d
       | None -> acc 
     in
-    let result = D.fold join_leaf (Queries.Result.bot ())  ctx.local in
+    let result = MyTree.fold join_leaf (Queries.Result.bot ()) resultTree in
     
     do_spawn ctx (!spawnAcc);
     do_split ctx (!splitAcc);
@@ -632,12 +686,8 @@ struct
     let sidegAcc = ref [] in 
     let assignAcc = ref [] in 
     
-    let handle_child leaf path = 
-      match leaf with
-      | Some d -> Some (S.assign (child_ctx d path ctx spawnAcc splitAcc sidegAcc assignAcc) lv e)
-      | None -> None      
-    in
-    let result = D.simplify @@ D.map handle_child ctx.local in
+    let handle_child d path = S.assign (child_ctx d path ctx spawnAcc splitAcc sidegAcc assignAcc) lv e in
+    let result = D.simplify @@ execute_for_each_child handle_child ctx.local in
     
     do_spawn ctx (!spawnAcc);
     do_split ctx (!splitAcc);
@@ -664,12 +714,8 @@ struct
     let sidegAcc = ref [] in 
     let assignAcc = ref [] in 
     
-    let handle_child leaf path = 
-      match leaf with
-      | Some d -> Some (S.branch (child_ctx d path ctx spawnAcc splitAcc sidegAcc assignAcc) e tv)
-      | None -> None      
-    in
-    let result = D.simplify @@ D.map handle_child ctx.local in
+    let handle_child d path = S.branch (child_ctx d path ctx spawnAcc splitAcc sidegAcc assignAcc) e tv in
+    let result = D.simplify @@ execute_for_each_child handle_child ctx.local in
     
     (* If a branch on a flag variable is discovered, remove domain entries not consistent with it. *)
     let result = match get_simple_var_expr e tv with
@@ -695,12 +741,8 @@ struct
     let sidegAcc = ref [] in 
     let assignAcc = ref [] in 
     
-    let handle_child leaf path = 
-      match leaf with
-      | Some d -> Some (S.body (child_ctx d path ctx spawnAcc splitAcc sidegAcc assignAcc) f)
-      | None -> None      
-    in
-    let result = D.simplify @@ D.map handle_child ctx.local in
+    let handle_child d path = S.body (child_ctx d path ctx spawnAcc splitAcc sidegAcc assignAcc) f in
+    let result = D.simplify @@ execute_for_each_child handle_child ctx.local in
     
     do_spawn ctx (!spawnAcc);
     do_split ctx (!splitAcc);
@@ -717,12 +759,8 @@ struct
     let sidegAcc = ref [] in 
     let assignAcc = ref [] in 
     
-    let handle_child leaf path = 
-      match leaf with
-      | Some d -> Some (S.return (child_ctx d path ctx spawnAcc splitAcc sidegAcc assignAcc) r f)
-      | None -> None      
-    in
-    let result = D.simplify @@ D.map handle_child ctx.local in
+    let handle_child d path = S.return (child_ctx d path ctx spawnAcc splitAcc sidegAcc assignAcc) r f in
+    let result = D.simplify @@ execute_for_each_child handle_child ctx.local in
     
     do_spawn ctx (!spawnAcc);
     do_split ctx (!splitAcc);
@@ -739,12 +777,8 @@ struct
     let sidegAcc = ref [] in 
     let assignAcc = ref [] in 
     
-    let handle_child leaf path = 
-      match leaf with
-      | Some d -> Some (S.intrpt (child_ctx d path ctx spawnAcc splitAcc sidegAcc assignAcc))
-      | None -> None      
-    in
-    let result = D.simplify @@ D.map handle_child ctx.local in
+    let handle_child d path = S.intrpt (child_ctx d path ctx spawnAcc splitAcc sidegAcc assignAcc) in
+    let result = D.simplify @@ execute_for_each_child handle_child ctx.local in
     
     do_spawn ctx (!spawnAcc);
     do_split ctx (!splitAcc);
@@ -761,12 +795,8 @@ struct
     let sidegAcc = ref [] in 
     let assignAcc = ref [] in 
     
-    let handle_child leaf path = 
-      match leaf with
-      | Some d -> Some (S.special (child_ctx d path ctx spawnAcc splitAcc sidegAcc assignAcc) r f args)
-      | None -> None      
-    in
-    let result = D.simplify @@ D.map handle_child ctx.local in
+    let handle_child d path = S.special (child_ctx d path ctx spawnAcc splitAcc sidegAcc assignAcc) r f args in
+    let result = D.simplify @@ execute_for_each_child handle_child ctx.local in
     
     do_spawn ctx (!spawnAcc);
     do_split ctx (!splitAcc);
@@ -788,12 +818,8 @@ struct
     let sidegAcc = ref [] in 
     let assignAcc = ref [] in 
     
-    let handle_child leaf path = 
-      match leaf with
-      | Some d -> Some (S.enter (child_ctx d path ctx spawnAcc splitAcc sidegAcc assignAcc) r f args)
-      | None -> None      
-    in
-    let result = D.map handle_child ctx.local in
+    let handle_child d path = S.enter (child_ctx d path ctx spawnAcc splitAcc sidegAcc assignAcc) r f args in
+    let result = execute_for_each_child handle_child ctx.local in
     
     let num = List.max @@ MyTree.to_some_list (fun ds path -> List.length ds) result in
     
@@ -821,16 +847,8 @@ struct
     let sidegAcc = ref [] in 
     let assignAcc = ref [] in 
     
-    let handle_child leaf_local leaf_fun_d path = 
-      match (leaf_local, leaf_fun_d) with
-      | (Some ld, Some fd) -> 
-        let ctx' = child_ctx ld path ctx spawnAcc splitAcc sidegAcc assignAcc in 
-        Some (S.combine ctx' r fe f args fd)
-      | (Some ld, None) -> None (* ??? *)
-      | (None, Some fd) -> None (* ??? *)
-      | (None, None) -> None
-    in
-    let result = D.simplify @@ D.map_2 handle_child ctx.local fun_d in
+    let handle_child (ld, fd) path = S.combine (child_ctx ld path ctx spawnAcc splitAcc sidegAcc assignAcc) r fe f args fd in
+    let result = D.simplify @@ execute_for_each_child handle_child @@ D.zip_strict ctx.local fun_d in
     
     do_spawn ctx (!spawnAcc);
     do_split ctx (!splitAcc);
