@@ -27,10 +27,6 @@ type 'd myTree =
   | MyTree_Both of 'd myTree
   | MyTree_Leaf of 'd option
 
-type 'd pathResult = 
-  | PathResult_ExactMatch of 'd
-  | PathResult_SplitRequired of int
-
 exception PathResultSplit of int
 
 module MyTree
@@ -63,6 +59,20 @@ struct
     | (MyTree_Both tf, []) -> failwith "MyTreePrintable.get with too short fs"
     | (MyTree_Leaf leaf, []) -> leaf
     | (MyTree_Leaf leaf, _) -> failwith "MyTreePrintable.get with too long fs"
+    
+  (* Returns the leaf at a given path. If the path is ambiguous a PathResultSplit exception is raised. *)
+  let get_or_raise tree path =
+    let rec impl tree path i =
+      match (tree, path) with
+      | (MyTree_TF (t, f), FS_True::xs) -> impl t xs (i + 1)
+      | (MyTree_TF (t, f), FS_False::xs) -> impl f xs (i + 1)
+      | (MyTree_TF (t, f), FS_Both::xs) -> raise (PathResultSplit i)
+      | (MyTree_TF (t, f), []) -> failwith "MyTreePrintable.get with too short fs"
+      | (MyTree_Both tf, x::xs) -> impl tf xs (i + 1)
+      | (MyTree_Both tf, []) -> failwith "MyTreePrintable.get with too short fs"
+      | (MyTree_Leaf leaf, []) -> leaf
+      | (MyTree_Leaf leaf, _) -> failwith "MyTreePrintable.get with too long fs"
+    in impl tree path 0
   
   (* Combines all leaves with the function f starting wittzh the value x. *)
   let fold f x tree =
@@ -373,20 +383,6 @@ struct
     | (MyTree_Leaf None, []) -> L.bot ()
     | (MyTree_Leaf leaf, _) -> failwith "MyTreePrintable.get with too long fs"
     
-  let get_at_path tree path =
-    let rec impl tree path i =
-      match (tree, path) with
-      | (MyTree_TF (t, f), FS_True::xs) -> impl t xs (i + 1)
-      | (MyTree_TF (t, f), FS_False::xs) -> impl f xs (i + 1)
-      | (MyTree_TF (t, f), FS_Both::xs) -> PathResult_SplitRequired i
-      | (MyTree_TF (t, f), []) -> failwith "MyTreePrintable.get with too short fs"
-      | (MyTree_Both tf, x::xs) -> impl tf xs (i + 1)
-      | (MyTree_Both tf, []) -> failwith "MyTreePrintable.get with too short fs"
-      | (MyTree_Leaf (Some leaf), []) -> PathResult_ExactMatch (leaf)
-      | (MyTree_Leaf None, []) -> PathResult_ExactMatch (L.bot ())
-      | (MyTree_Leaf leaf, _) -> failwith "MyTreePrintable.get with too long fs"
-    in impl tree path 0
-    
   let make_from_list xs =
     List.fold_left join (bot ()) @@ List.map (fun (path, d) -> make_path_tree path (Some d)) xs
     
@@ -413,11 +409,7 @@ struct
     (assign_acc : (mySingleFlagState list * string option * lval * exp) list ref) =
     
     let rec ask q = S.query ctx' q
-    
-    and global v = 
-      match G.get_at_path (ctx.global v) path with
-      | PathResult_ExactMatch result -> result
-      | PathResult_SplitRequired idx -> raise (PathResultSplit idx)
+    and global v = Option.default (S.G.bot ()) @@ G.get_or_raise (ctx.global v) path
     
     and spawn v d = spawn_acc := (path, v, d) :: !spawn_acc
     and split d e b = split_acc := (path, d, e, b) :: !split_acc
@@ -584,6 +576,8 @@ struct
   let do_assign ctx (xs : (mySingleFlagState list * string option * lval * exp) list) =
     if List.length xs > 0 then failwith "This should never be called." else ()
     
+  (* Maps each non-empty tree leaf to a new leaf using the function f. 
+     Automatically splits a TF node if a PathResultSplit exception is caught. *)
   let execute_for_each_child f d = 
     
     let rec impl tree path i =
@@ -595,10 +589,7 @@ struct
       | MyTree_Both tf -> 
         begin 
           try MyTree_Both (impl tf (path @ [FS_Both]) (i + 1)) 
-          with
-          | PathResultSplit split_idx when split_idx = i ->
-            print_endline ("split occurred @ " ^ string_of_int i);
-            impl (MyTree_TF (tf, tf)) path i
+          with PathResultSplit split_idx when split_idx = i -> impl (MyTree_TF (tf, tf)) path i
         end
       | MyTree_Leaf (Some leaf) -> MyTree_Leaf (Some (f leaf path))
       | MyTree_Leaf None -> MyTree_Leaf None
