@@ -5,9 +5,6 @@ open Analyses
 open GobConfig
 open MyUtil
 
-let pp_vars = ["GOBLINT_PP_VAR__FLAG_A"; "GOBLINT_PP_VAR__FLAG_B"; "GOBLINT_PP_VAR__FLAG_C"]
-let num_pp_vars = List.length pp_vars
-
 type mySingleFlagState =
   | FS_True
   | FS_False
@@ -29,9 +26,28 @@ type 'd myTree =
 
 exception PathResultSplit of int
 
-module MyTree
+module type PpVars = 
+sig
+  val pp_vars : string list  
+end
+
+let get_pp_vars file = 
+  let get_global_var g = 
+    match g with
+    | Cil.GVarDecl (var, lov) -> [var.vname]
+    | Cil.GVar (var, init, loc) -> [var.vname]
+    | _ -> []
+  in
+  let gvars = List.flatten @@ List.map get_global_var @@ file.globals in
+  let pp_vars = List.filter (fun n -> is_prefix "GOBLINT_PP_VAR__" n) gvars in
+  List.iter (fun n -> print_endline ("PP_VAR: " ^ n)) pp_vars;
+  pp_vars
+
+module MyTree (P:PpVars)
 =
-struct
+struct 
+  
+  let height = List.length P.pp_vars 
   
   (* Creates a tree of given depth contzaining only of Both nodes a given leaf value. *)
   let rec make_both_tree depth leaf =
@@ -39,7 +55,7 @@ struct
     
   (* Creates a tree representing a single defined value .*)
   let single d = 
-    make_both_tree num_pp_vars (Some d)
+    make_both_tree height (Some d)
     
   (* Creates a tree which has a leaf value at a given path and is empty otherwise. *)
   let rec make_path_tree path leaf = 
@@ -48,17 +64,6 @@ struct
     | (FS_False :: xs) -> MyTree_TF (make_both_tree (List.length xs) None, make_path_tree xs leaf)
     | (FS_Both :: xs) -> MyTree_Both (make_path_tree xs leaf)
     | [] -> MyTree_Leaf leaf
-  
-  (* Returns the leaf at a given path. *)
-  let rec get tree path =
-    match (tree, path) with
-    | (MyTree_TF (t, f), true::xs) -> get t xs
-    | (MyTree_TF (t, f), false::xs) -> get f xs
-    | (MyTree_TF (t, f), []) -> failwith "MyTreePrintable.get with too short fs"
-    | (MyTree_Both tf, x::xs) -> get tf xs
-    | (MyTree_Both tf, []) -> failwith "MyTreePrintable.get with too short fs"
-    | (MyTree_Leaf leaf, []) -> leaf
-    | (MyTree_Leaf leaf, _) -> failwith "MyTreePrintable.get with too long fs"
     
   (* Returns the leaf at a given path. If the path is ambiguous a PathResultSplit exception is raised. *)
   let get_or_raise tree path =
@@ -96,28 +101,6 @@ struct
       end in
     impl tree []
   
-  (* Returns if a function is true for at least one leaf value. *)
-  let exists f tree =
-    let rec impl tree path =
-      begin match tree with
-      | MyTree_TF (t, f) -> impl t (path @ [FS_True]) || impl f (path @ [FS_False])
-      | MyTree_Both tf -> impl tf (path @ [FS_Both])
-      | MyTree_Leaf leaf -> f leaf path
-      end in
-    impl tree []
-    
-  (* Returns if all leafes specified by the path exist, i.e. are not None. *)
-  let rec contains tree path =
-    match (tree, path) with
-    | (MyTree_TF (t, f), FS_True::xs) -> contains t xs
-    | (MyTree_TF (t, f), FS_False::xs) -> contains f xs
-    | (MyTree_TF (t, f), FS_Both::xs) -> contains t xs && contains f xs
-    | (MyTree_TF (t, f), []) -> failwith "MyTreePrintable.contains with too short fs"
-    | (MyTree_Both tf, x::xs) -> contains tf xs
-    | (MyTree_Both tf, []) -> failwith "MyTreePrintable.contains with too short fs"
-    | (MyTree_Leaf leaf, x::xs) -> failwith "MyTreePrintable.contains with too long fs"
-    | (MyTree_Leaf leaf, []) -> Option.is_some leaf
-  
   (* Transforms all leaves by applying a function. *)
   let map f tree =
     let rec impl tree path =
@@ -132,7 +115,7 @@ struct
   let mapSome f tree = 
     map (fun leaf path -> if Option.is_some leaf then f (Option.get leaf) path else None) tree
   
-  (* Transforms all leaves by applying a function. *)
+  (* Creates a list of all leaves (including NONE) transformed by some function. *)
   let to_list f tree =
     let rec impl tree path =
       begin match tree with
@@ -142,7 +125,7 @@ struct
       end in
     impl tree []
   
-  (* Transforms all non empty leaves by applying a function. *)
+  (* Creates a list of all non NONE leaves transformed by some function. *)
   let to_some_list f tree =
     let rec impl tree path =
       begin match tree with
@@ -152,21 +135,7 @@ struct
       | MyTree_Leaf None -> []
       end in
     impl tree []
-
-  (* Executes f for each pair of values in both trees. *)
-  let iter_2 f xtree ytree : unit =
-    let rec impl xtree ytree path =
-      match (xtree, ytree) with
-      | (MyTree_TF (xt, xf), MyTree_TF (yt, yf)) -> impl xt yt (path @ [FS_True]); impl xf yf (path @ [FS_False])
-      | (MyTree_TF (xt, xf), MyTree_Both ytf) -> impl xt ytf (path @ [FS_True]); impl xf ytf (path @ [FS_False])
-      | (MyTree_Both xtf, MyTree_TF (yt, yf)) -> impl xtf yt (path @ [FS_True]); impl xtf yf (path @ [FS_False])
-      | (MyTree_Both xtf, MyTree_Both ytf) -> impl xtf ytf (path @ [FS_Both])
-      | (MyTree_Leaf xleaf, MyTree_Leaf yleaf) -> f xleaf yleaf path
-      | (MyTree_Leaf xleaf, _) -> failwith "Called MyTree.iter_2 with inconsistent tree height."
-      | (_, MyTree_Leaf yleaf) -> failwith "Called MyTree.iter_2 with inconsistent tree height."
-    in
-    impl xtree ytree []
-
+    
   (* Returns if f is true for each pair of values in both trees. *)
   let for_all_2 f xtree ytree =
     let rec impl xtree ytree path =
@@ -180,27 +149,13 @@ struct
       | (_, MyTree_Leaf yleaf) -> failwith "Called MyTree.for_all_2 with inconsistent tree height."
     in
     impl xtree ytree []
-
-  (* Returns a new tree by combining each pair of values in both trees with f. *)
-  let map_2 f xtree ytree =
-    let rec impl xtree ytree path =
-      match (xtree, ytree) with
-      | (MyTree_TF (xt, xf), MyTree_TF (yt, yf)) -> MyTree_TF (impl xt yt (path @ [FS_True]), impl xf yf (path @ [FS_False]))
-      | (MyTree_TF (xt, xf), MyTree_Both ytf) -> MyTree_TF (impl xt ytf (path @ [FS_True]), impl xf ytf (path @ [FS_False]))
-      | (MyTree_Both xtf, MyTree_TF (yt, yf)) -> MyTree_TF (impl xtf yt (path @ [FS_True]), impl xtf yf (path @ [FS_False]))
-      | (MyTree_Both xtf, MyTree_Both ytf) -> MyTree_Both (impl xtf ytf (path @ [FS_Both]))
-      | (MyTree_Leaf xleaf, MyTree_Leaf yleaf) -> MyTree_Leaf (f xleaf yleaf path)
-      | (MyTree_Leaf xleaf, _) -> failwith "Called MyTree.map_2 with inconsistent tree height."
-      | (_, MyTree_Leaf yleaf) -> failwith "Called MyTree.map_2 with inconsistent tree height."
-    in
-    impl xtree ytree []
     
-  let rec zip_strict xtree ytree =
+  let rec zip xtree ytree =
     match (xtree, ytree) with
-    | (MyTree_TF (xt, xf), MyTree_TF (yt, yf)) -> MyTree_TF (zip_strict xt yt, zip_strict xf yf)
-    | (MyTree_TF (xt, xf), MyTree_Both ytf) -> MyTree_TF (zip_strict xt ytf, zip_strict xf ytf)
-    | (MyTree_Both xtf, MyTree_TF (yt, yf)) -> MyTree_TF (zip_strict xtf yt, zip_strict xtf yf)
-    | (MyTree_Both xtf, MyTree_Both ytf) -> MyTree_Both (zip_strict xtf ytf)
+    | (MyTree_TF (xt, xf), MyTree_TF (yt, yf)) -> MyTree_TF (zip xt yt, zip xf yf)
+    | (MyTree_TF (xt, xf), MyTree_Both ytf) -> MyTree_TF (zip xt ytf, zip xf ytf)
+    | (MyTree_Both xtf, MyTree_TF (yt, yf)) -> MyTree_TF (zip xtf yt, zip xtf yf)
+    | (MyTree_Both xtf, MyTree_Both ytf) -> MyTree_Both (zip xtf ytf)
     | (MyTree_Leaf (Some xleaf), MyTree_Leaf (Some yleaf)) -> MyTree_Leaf (Some (xleaf, yleaf))
     | (MyTree_Leaf (Some xleaf), MyTree_Leaf None) -> MyTree_Leaf None
     | (MyTree_Leaf None, MyTree_Leaf (Some yleaf)) -> MyTree_Leaf None
@@ -210,13 +165,13 @@ struct
   
 end
 
-module MyTreePrintable (L:Printable.S)
+module MyTreePrintable (P:PpVars) (L:Printable.S)
 = 
 struct
   
   type t = L.t myTree
   
-  include MyTree
+  include MyTree (P)
   
   let rec short i d = 
     match d with
@@ -276,12 +231,12 @@ struct
         match tree with
         | MyTree_TF (t, f) -> 
           if value 
-          then simplify_nonrec @@ MyTree_TF (t, make_both_tree (num_pp_vars - pos - 1) None) 
-          else simplify_nonrec @@ MyTree_TF (make_both_tree (num_pp_vars - pos - 1) None, f)
+          then simplify_nonrec @@ MyTree_TF (t, make_both_tree (height - pos - 1) None) 
+          else simplify_nonrec @@ MyTree_TF (make_both_tree (height - pos - 1) None, f)
         | MyTree_Both tf -> 
           if value 
-          then simplify_nonrec @@ MyTree_TF (tf, make_both_tree (num_pp_vars - pos - 1) None) 
-          else simplify_nonrec @@ MyTree_TF (make_both_tree (num_pp_vars - pos - 1) None, tf)
+          then simplify_nonrec @@ MyTree_TF (tf, make_both_tree (height - pos - 1) None) 
+          else simplify_nonrec @@ MyTree_TF (make_both_tree (height - pos - 1) None, tf)
         | MyTree_Leaf leaf -> MyTree_Leaf leaf
       end
     in
@@ -298,11 +253,11 @@ struct
   
 end
 
-module MyTreeDom (L:Lattice.S)
+module MyTreeDom (P:PpVars) (L:Lattice.S)
 = 
 struct
   
-  include MyTreePrintable (L)
+  include MyTreePrintable (P) (L)
   include Lattice.StdCousot (* ??? *)
   
   let leq xtree ytree =
@@ -363,11 +318,11 @@ struct
     | (MyTree_Both xtf, MyTree_TF (yt, yf)) -> simplify_nonrec @@ MyTree_TF (meet xtf yt, meet xtf yf)
     | (MyTree_Both xtf, MyTree_Both ytf) -> MyTree_Both (meet xtf ytf)
     
-  let bot () = make_both_tree num_pp_vars None
+  let bot () = make_both_tree height None
   
   let is_bot tree = for_all (fun leaf fs -> Option.is_none leaf) tree
     
-  let top () = make_both_tree num_pp_vars (Some (L.top ()))
+  let top () = make_both_tree height (Some (L.top ()))
   
   let is_top tree = for_all (fun leaf fs -> Option.is_some leaf && L.is_top (Option.get leaf)) tree
   
@@ -388,19 +343,21 @@ struct
     
 end
 
-module TestPrintable : Printable.S = MyTreePrintable (Printable.Unit)
-module TestLattice : Lattice.S = MyTreeDom (Lattice.Unit)
+module TestPpVars = struct let pp_vars = [] let height = 0 end
+module TestPrintable : Printable.S = MyTreePrintable (TestPpVars) (Printable.Unit)
+module TestLattice : Lattice.S = MyTreeDom (TestPpVars) (Lattice.Unit)
 
-module PpFlagDependent (S:Spec)
-  : Spec with module D = MyTreeDom (S.D)
-          and module G = MyTreeDom (S.G)
-          and module C = MyTreePrintable (S.C)
+module PpFlagDependent (P:PpVars) (S:Spec)
+  : Spec with module D = MyTreeDom (P) (S.D)
+          and module G = MyTreeDom (P) (S.G)
+          and module C = MyTreePrintable (P) (S.C)
 =
 struct
   
-  module D = MyTreeDom (S.D)
-  module G = MyTreeDom (S.G)
-  module C = MyTreePrintable (S.C)
+  module D = MyTreeDom (P) (S.D)
+  module G = MyTreeDom (P) (S.G)
+  module C = MyTreePrintable (P) (S.C)
+  module T = MyTree (P)
   
   let child_ctx child_d (path : mySingleFlagState list) (ctx : (D.t, G.t) Analyses.ctx) 
     (spawn_acc : (mySingleFlagState list * varinfo * S.D.t) list ref) 
@@ -514,7 +471,7 @@ struct
     print_endline "-> tree_test.end";
     print_endline ""
   *)
-
+  
   let init () = (*tree_test();*) S.init ()
   let finalize () = S.finalize ()
   
@@ -652,7 +609,7 @@ struct
       | Some d -> Queries.Result.join acc d
       | None -> acc 
     in
-    let result = MyTree.fold join_leaf (Queries.Result.bot ()) resultTree in
+    let result = T.fold join_leaf (Queries.Result.bot ()) resultTree in
     
     do_spawn ctx (!spawnAcc);
     do_split ctx (!splitAcc);
@@ -687,16 +644,6 @@ struct
     
     result
     
-  let is_pp_var var = 
-    (*is_prefix "GOBLINT_PP_VAR__" var.vname*)
-    List.exists (fun x -> x = var.vname) pp_vars
-  
-  let get_simple_var_expr e tv =
-    match e with
-    | Lval (Var var, NoOffset) -> Some (var, tv)
-    | UnOp (LNot, (Lval (Var var, NoOffset)), _) -> Some (var, not tv)
-    | _ -> None
-  
   let branch ctx e tv =
     print_endline "branch";
     
@@ -708,14 +655,25 @@ struct
     let handle_child d path = S.branch (child_ctx d path ctx spawnAcc splitAcc sidegAcc assignAcc) e tv in
     let result = D.simplify @@ execute_for_each_child handle_child ctx.local in
     
+    let simple_var_expr =
+      match e with
+      | Lval (Var var, NoOffset) -> Some (var.vname, true)
+      | UnOp (LNot, (Lval (Var var, NoOffset)), _) -> Some (var.vname, false)
+      | _ -> None
+    in
+    
     (* If a branch on a flag variable is discovered, remove domain entries not consistent with it. *)
-    let result = match get_simple_var_expr e tv with
-      | Some (var, value) when is_pp_var var -> 
-        let idx = Option.get @@ List.index_of var.vname pp_vars in
-        print_endline ("simple variable branch: [" ^ var.vname ^ "@" ^ string_of_int idx ^ " == " ^ string_of_bool value ^ "]");
-        D.restrict idx value result
-      | _ -> result
-    in 
+    let result =
+      match simple_var_expr with
+      | None -> result
+      | Some (var, negated) ->
+        begin match List.index_of var P.pp_vars with
+        | None -> result
+        | Some idx ->
+          print_endline ("simple variable branch: [" ^ var ^ "@" ^ string_of_int idx ^ " == " ^ string_of_bool (tv = negated) ^ "]");
+          D.restrict idx (tv = negated) result
+        end
+    in
     
     do_spawn ctx (!spawnAcc);
     do_split ctx (!splitAcc);
@@ -812,9 +770,9 @@ struct
     let handle_child d path = S.enter (child_ctx d path ctx spawnAcc splitAcc sidegAcc assignAcc) r f args in
     let result = execute_for_each_child handle_child ctx.local in
     
-    let num = List.max @@ MyTree.to_some_list (fun ds path -> List.length ds) result in
+    let num = List.max @@ T.to_some_list (fun ds path -> List.length ds) result in
     
-    let treelist = MyTree.to_some_list (fun ds path -> (path, ds)) result in
+    let treelist = T.to_some_list (fun ds path -> (path, ds)) result in
     
     let get_nth n = 
       let nth = List.map (fun (path, ds) -> (path, List.nth ds n)) @@ List.filter (fun (path, ds) -> List.length ds > n) treelist in
@@ -839,7 +797,7 @@ struct
     let assignAcc = ref [] in 
     
     let handle_child (ld, fd) path = S.combine (child_ctx ld path ctx spawnAcc splitAcc sidegAcc assignAcc) r fe f args fd in
-    let result = D.simplify @@ execute_for_each_child handle_child @@ D.zip_strict ctx.local fun_d in
+    let result = D.simplify @@ execute_for_each_child handle_child @@ D.zip ctx.local fun_d in
     
     do_spawn ctx (!spawnAcc);
     do_split ctx (!splitAcc);
