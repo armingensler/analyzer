@@ -418,11 +418,11 @@ struct
     Result.output (lazy !local_xml) !global_xml make_global_xml make_global_fast_xml file
   
   let analyze file fs =
-    let module PpVars = struct let pp_vars = FlagDependent.get_pp_vars file end in
+    let module F = struct let file = file end in
     if get_bool "ana.hashcons" then
-      analyze file fs (module (FlagDependent.PpFlagDependent (PpVars) (DeadCodeLifter (HashconsLifter (PathSensitive2 (MCP.MCP2))))) : Spec)
+      analyze file fs (module (PpVarDependent.PpVarDependent (F) (DeadCodeLifter (HashconsLifter (PathSensitive2 (MCP.MCP2))))) : Spec)
     else
-      analyze file fs (module (FlagDependent.PpFlagDependent (PpVars) (DeadCodeLifter (PathSensitive2 (MCP.MCP2)))) : Spec)
+      analyze file fs (module (PpVarDependent.PpVarDependent (F) (DeadCodeLifter (PathSensitive2 (MCP.MCP2)))) : Spec)
 end
 
 (** The main function to perform the selected analyses. *)
