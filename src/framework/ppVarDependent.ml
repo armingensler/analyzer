@@ -40,7 +40,7 @@ module VarTree (H:TreeHeight)
 =
 struct 
   
-  (* Creates a tree of given depth contzaining only of Both nodes a given leaf value. *)
+  (* Creates a tree of given depth containing only Both nodes of a given leaf value. *)
   let rec make_both_tree depth leaf =
     if depth <= 0 then VarTree_Leaf leaf else VarTree_Both (make_both_tree (depth - 1) leaf)
     
@@ -70,7 +70,7 @@ struct
       | (VarTree_Leaf leaf, _) -> failwith "VarTreePrintable.get with too long fs"
     in impl tree path 0
   
-  (* Combines all leaves with the function f starting wittzh the value x. *)
+  (* Combines all leaves with the function f starting with the value x. *)
   let fold f x tree =
     let rec impl acc tree path =
       begin match tree with
@@ -348,7 +348,7 @@ struct
       | Cil.GVar (var, init, loc) -> [var.vname]
       | _ -> []
     in
-    let is_pp_varname n = is_prefix "GOBLINT_PP_VAR__" n in
+    let is_pp_varname n = String.starts_with n "GOBLINT_PP_VAR__" in
     List.filter is_pp_varname @@ List.flatten @@ List.map get_global_varname @@ F.file.globals
   
   module H = struct let height = List.length pp_vars end
@@ -390,7 +390,7 @@ struct
     
     ctx'
 
-  let name = S.name^" PpVarDependent"
+  let name = S.name ^ " PpVarDependent"
   
   (*
   module T = MyTreeDom (IntDomain.Lifted)
@@ -475,7 +475,7 @@ struct
   *)
   
   let init () = 
-    List.iter (fun n -> print_endline ("PP_VAR: " ^ n)) pp_vars;
+    (*List.iter (fun n -> print_endline ("PP_VAR: " ^ n)) pp_vars;*)
     (*tree_test();*) 
     S.init ()
   let finalize () = S.finalize ()
@@ -561,7 +561,6 @@ struct
     impl d [] 0
     
   let sync ctx : (D.t * (varinfo * G.t) list)  =
-    print_endline "sync";
     
     let spawnAcc = ref [] in 
     let splitAcc = ref [] in 
@@ -599,7 +598,6 @@ struct
     (dtree, g_result)
     
   let query ctx q =
-    print_endline "query";
     
     let spawnAcc = ref [] in
     let splitAcc = ref [] in
@@ -624,15 +622,6 @@ struct
     result
     
   let assign ctx lv e =
-    print_endline "assign";
-    
-    (* BEGIN logging *)
-    (*let flags = flag_dom_from_ctx ctx in
-    print_endline ("assign: " ^ lval_to_string lv ^ " = " ^ exp_to_string e ^ " (flags = " ^ FlatBoolListDomain.short 80 flags ^ ")");
-    let possible_flag_values = List.filter (fun s -> FlatBoolListDomain.is_possible_value s flags) flag_states in
-    print_endline ("  #possible_flag_states = " ^ string_of_int (List.length possible_flag_values));
-    List.iter (fun s -> print_endline ("  " ^ flag_state_to_string s)) possible_flag_values;*)
-    (* END logging *)
     
     let spawnAcc = ref [] in 
     let splitAcc = ref [] in 
@@ -650,7 +639,6 @@ struct
     result
     
   let branch ctx e tv =
-    print_endline "branch";
     
     let spawnAcc = ref [] in 
     let splitAcc = ref [] in 
@@ -688,7 +676,6 @@ struct
     result
   
   let body ctx f =
-    print_endline "body";
     
     let spawnAcc = ref [] in 
     let splitAcc = ref [] in 
@@ -706,7 +693,6 @@ struct
     result
 
   let return ctx r f =
-    print_endline "return";
     
     let spawnAcc = ref [] in 
     let splitAcc = ref [] in 
@@ -724,7 +710,6 @@ struct
     result
 
   let intrpt ctx =
-    print_endline "intrpt";
     
     let spawnAcc = ref [] in 
     let splitAcc = ref [] in 
@@ -742,7 +727,6 @@ struct
     result
 
   let special ctx r f args =
-    print_endline "special";
     
     let spawnAcc = ref [] in 
     let splitAcc = ref [] in 
@@ -760,12 +744,11 @@ struct
     result
   
   let enter ctx r f args =
-    print_endline "enter";
     
-    let str_r = Option.map_default lval_to_string "<None>" r in
+    (*let str_r = Option.map_default lval_to_string "<None>" r in
     let str_f = f.vname in
     let str_args = String.concat " , " @@ List.map exp_to_string args in
-    print_endline ("enter: " ^ str_r ^ " = " ^ str_f ^ "(" ^ str_args  ^ ")");
+    print_endline ("enter: " ^ str_r ^ " = " ^ str_f ^ "(" ^ str_args  ^ ")");*)
     
     let spawnAcc = ref [] in 
     let splitAcc = ref [] in 
