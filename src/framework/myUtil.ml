@@ -14,7 +14,7 @@ let assoc_split_eq (=) (k:'a) (xs:('a * 'b) list) : ('b list) * (('a * 'b) list)
   f [] [] xs
   
 (** [group_assoc_eq (=) [(1,a);(1,b);(2,x);(2,y)] = [(1,[a,b]),(2,[x,y])]] *)
-let agroup_assoc_eq eq (xs: ('a * 'b) list) : ('a * ('b list)) list  =
+let group_assoc_eq eq (xs: ('a * 'b) list) : ('a * ('b list)) list  =
   let rec f a = function
     | [] -> a
     | (k,v)::xs ->
