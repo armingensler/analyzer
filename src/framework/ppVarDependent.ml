@@ -175,6 +175,21 @@ struct
   
   include Printable.PrintSimple (struct type t' = t let short = short let name = name end)
   
+  let toXML x = 
+    let f leaf path = 
+      match leaf with
+      | Some leaf ->  
+        let flatten_single = function Xml.Element (_,_,[x]) | x ->  x in
+        let children = Xml.children @@ flatten_single @@ L.toXML leaf in
+        Xml.Element ("Node", [("text", "[" ^ varstates_to_string path ^ "]")], children)
+      | None -> 
+        Xml.Element ("Leaf", [("text", "[" ^ varstates_to_string path ^ "] = NONE")], [])
+    in
+    let entries = to_list f x in
+    Xml.Element ("Node", [("text", "abcdef")], entries)
+    
+  let toXML_f _ = toXML
+  
   let compare = Pervasives.compare
   
   let rec equal x y = 
