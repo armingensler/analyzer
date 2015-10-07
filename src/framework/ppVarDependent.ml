@@ -179,14 +179,14 @@ struct
     let f leaf path = 
       match leaf with
       | Some leaf ->  
-        let flatten_single = function Xml.Element (_,_,[x]) | x ->  x in
-        let children = Xml.children @@ flatten_single @@ L.toXML leaf in
+        let flatten_single = function Xml.Element (_,_,[x]) -> Xml.children x | x -> [x] in
+        let children = flatten_single @@ L.toXML leaf in
         Xml.Element ("Node", [("text", "[" ^ varstates_to_string path ^ "]")], children)
       | None -> 
         Xml.Element ("Leaf", [("text", "[" ^ varstates_to_string path ^ "] = NONE")], [])
     in
     let entries = to_list f x in
-    Xml.Element ("Node", [("text", "abcdef")], entries)
+    Xml.Element ("Node", [("text", "abcdef")], [Xml.Element ("Node", [("text", "xyzxyz")], entries)])
     
   let toXML_f _ = toXML
   
