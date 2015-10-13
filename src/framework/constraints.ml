@@ -891,11 +891,6 @@ struct
       in
       iter print_one x
       
-    let toXML_f sf x =
-      match toXML_f sf x with
-      | Xml.Element (a, [("text", text)], c) -> Xml.Element (a, [("text", "[#=" ^ string_of_int (cardinal x) ^ "]" ^ text)], c)
-      | other -> other
-      
   end
 
   module G = S.G
