@@ -141,21 +141,37 @@ let handle_flags () =
 let preprocess_one_file cppflags includes dirName fname =
   (* The actual filename of the preprocessed sourcefile *)
   let nname =  Filename.concat dirName (Filename.basename fname) in
-
-  (* Preprocess using cpp. *)
-  (* ?? what is __BLOCKS__? is it ok to just undef? this? http://en.wikipedia.org/wiki/Blocks_(C_language_extension) *)
-  let command = Config.cpp ^ " --undef __BLOCKS__ " ^ cppflags ^ " " ^ includes ^ " " ^ fname ^ " -o " ^ nname in
-  if get_bool "dbg.verbose" then print_endline command;
-
+  
   (* if something goes wrong, we need to clean up and exit *)
   let rm_and_exit () =
     if not (get_bool "keepcpp") then ignore (Goblintutil.rm_rf dirName); raise BailFromMain
   in
-  try match Unix.system command with
-    | Unix.WEXITED 0 -> nname
+  let system_or_error command =
+    try match Unix.system command with
+    | Unix.WEXITED 0 -> ()
     | _ -> eprintf "Goblint: Preprocessing failed."; rm_and_exit ()
-  with Unix.Unix_error (e, f, a) ->
-    eprintf "%s at syscall %s with argument \"%s\".\n" (Unix.error_message e) f a; rm_and_exit ()
+    with Unix.Unix_error (e, f, a) ->
+      eprintf "%s at syscall %s with argument \"%s\".\n" (Unix.error_message e) f a; rm_and_exit ()    
+  in
+  
+  (* process with pre_pp first *)
+  let command = Config.pre_pp ^ " " ^ fname ^ " " ^ nname ^ ".preppout \"FLAG_A,FLAG_B\"" in
+  if get_bool "dbg.verbose" then print_endline command;
+  system_or_error command;
+  
+  (* Preprocess using cpp. *)
+  (* ?? what is __BLOCKS__? is it ok to just undef? this? http://en.wikipedia.org/wiki/Blocks_(C_language_extension) *)
+  let command = Config.cpp ^ " --undef __BLOCKS__ " ^ cppflags ^ " " ^ includes ^ " " ^ nname ^ ".preppout -o " ^ nname ^ ".ppout" in
+  if get_bool "dbg.verbose" then print_endline command;
+  system_or_error command;
+
+  (* Use custom parser to create C code from goblint pp instructions *)
+  let command = Config.pp_converter ^ " " ^ nname ^ ".ppout " ^ nname ^ ".ppconvout" in
+  if get_bool "dbg.verbose" then print_endline command;
+  system_or_error command;
+  
+  nname ^ ".ppconvout"
+
 
 (** Preprocess all files. Return list of preprocessed files and the temp directory name. *)
 let preprocess_files () =
