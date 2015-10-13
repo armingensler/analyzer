@@ -150,12 +150,15 @@ struct
   
   let toXML x = 
     let f leaf path = 
-      let flatten_single = function Xml.Element (_,_,[x]) -> Xml.children x | x -> [x] in
+      let flatten_single = function 
+        | Xml.Element (_,_,[x]) -> Xml.children x
+        | Xml.Element (_,_,xs) when not (List.is_empty xs) -> xs 
+        | x -> [x] in
       let children = flatten_single @@ L.toXML leaf in
       Xml.Element ("Node", [("text", "[" ^ varstates_to_string path ^ "]")], children)
     in
     let entries = to_list f x in
-    Xml.Element ("Node", [("text", "abcdef")], [Xml.Element ("Node", [("text", "xyzxyz")], entries)])
+    Xml.Element ("Node", [("text", "")], entries)
     
   let toXML_f _ = toXML
   

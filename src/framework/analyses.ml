@@ -552,7 +552,7 @@ struct
     in
     let esc = Goblintutil.escape in
     let ctx = try_replace_text "Context" (flatten_single (C.toXML es)) in
-    let res = try_replace_text "Value" (flatten_single (D.toXML x)) in
+    let res = try_replace_text "Value" (D.toXML x) in
     Element ("Node",["text",esc (short 80 st)],[ctx;res])
   let pretty () (_,x,_) = D.pretty () x
   let printXml f (c,d,fd) =
