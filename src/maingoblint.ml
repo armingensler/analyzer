@@ -26,7 +26,8 @@ let print_help ch =
   fprintf ch "    -v                        Prints more status information.                 \n";
   fprintf ch "    -o <file>                 Prints the output to file.                      \n";
   fprintf ch "    -I <dir>                  Add include directory.                          \n";
-  fprintf ch "    -IK <dir>                 Add kernel include directory.                   \n\n";
+  fprintf ch "    -IK <dir>                 Add kernel include directory.                   \n";
+  fprintf ch "    -P <flags>                PP flags.                                       \n\n";
   fprintf ch "    --help                    Prints this text                                \n";
   fprintf ch "    --version                 Print out current version information.          \n\n";
   fprintf ch "    --conf <file>             Merge the configuration from the <file>.        \n";
@@ -72,6 +73,7 @@ let option_spec_list =
   ; "-v"                   , Arg.Unit (fun () -> set_bool "dbg.verbose" true), ""
   ; "-I"                   , Arg.String (set_string "includes[+]"), ""
   ; "-IK"                  , Arg.String (set_string "kernel_includes[+]"), ""
+  ; "-P"                   , Arg.String (set_string "ppflags"), ""
   ; "--set"                , Arg.Tuple [Arg.Set_string tmp_arg; Arg.String (fun x -> set_auto !tmp_arg x)], ""
   ; "--sets"               , Arg.Tuple [Arg.Set_string tmp_arg; Arg.String (fun x -> set_string !tmp_arg x)], ""
   ; "--enable"             , Arg.String (fun x -> set_bool x true), ""
@@ -155,8 +157,8 @@ let preprocess_one_file cppflags includes dirName fname =
   in
   
   (* process with pre_pp first *)
-  let command = Config.pre_pp ^ " " ^ fname ^ " " ^ nname ^ ".preppout \"FLAG_A,FLAG_B\"" in
-  if get_bool "dbg.verbose" then print_endline command;
+  let command = Config.pre_pp ^ " " ^ fname ^ " " ^ nname ^ ".preppout \"" ^ get_string "ppflags" ^ "\"" in
+  if get_bool "dbg.verbose" || true then print_endline command;
   system_or_error command;
   
   (* Preprocess using cpp. *)
@@ -243,7 +245,7 @@ let merge_preprocessed (cpp_file_names, dirName) =
   let files_AST = List.rev_map Cilfacade.getAST cpp_file_names in
 
   (* remove the files *)
-  if not (get_bool "keepcpp") then ignore (Goblintutil.rm_rf dirName);
+  (*if not (get_bool "keepcpp") then ignore (Goblintutil.rm_rf dirName);*)
 
   let cilout =
     if get_string "dbg.cilout" = "" then Legacy.stderr else Legacy.open_out (get_string "dbg.cilout")

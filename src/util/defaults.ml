@@ -82,6 +82,7 @@ let _ = ()
       ; reg Std "interact.enabled" "false"       "Is interactive mode enabled."
       ; reg Std "interact.paused" "false"        "Start interactive in pause mode."
       ; reg Std "phases"          "[]"           "List of phases. Per-phase settings overwrite global ones."
+      ; reg Std "ppflags"         ""             "Preprocessor flags to be analyzed in paralel."
 
 (* {4 category [Analyses]} *)
 let _ = ()
@@ -238,6 +239,7 @@ let default_schema = "\
   , 'colors'          : {}
   , 'g2html'          : {}
   , 'interact'        : {}
+  , 'ppflags'         : {}
   }
 }"
 
