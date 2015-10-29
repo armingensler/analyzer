@@ -209,7 +209,7 @@ struct
   include VarTreePrintable (H) (L)
   include Lattice.StdCousot (* ??? *)
   
-  let leq xtree ytree =
+  (*let leq xtree ytree =
     
     (* Returns if d is <= than all leaves of ytree at path. *)
     let rec leq_than_all_at_path tree d path = 
@@ -239,7 +239,17 @@ struct
       
     in
     let f leaf path = leq_than_all_at_path ytree leaf path in
-    for_all f xtree
+    for_all f xtree*)
+    
+  let rec leq x y = 
+    match (x, y) with
+    | (VarTree_Leaf xleaf, VarTree_Leaf yleaf) -> VarTree_Leaf (L.leq xleaf yleaf)
+    | (VarTree_Leaf xleaf, _) -> failwith "Called VarTreeDom.leq with inconsistent tree heights."
+    | (_, VarTree_Leaf yleaf) -> failwith "Called VarTreeDom.leq with inconsistent tree heights."
+    | (VarTree_TF (xt, xf), VarTree_TF (yt, yf)) -> leq xt yt && leq xf yf
+    | (VarTree_TF (xt, xf), VarTree_Both ytf) -> leq xt ytf && leq xf ytf
+    | (VarTree_Both xtf, VarTree_TF (yt, yf)) -> leq xtf yt && leq xtf yf
+    | (VarTree_Both xtf, VarTree_Both ytf) -> leq xtf ytf
     
   let rec join x y = 
     match (x, y) with
@@ -374,92 +384,7 @@ struct
 
   let name = S.name ^ " PpVarDependent"
   
-  (*
-  module T = MyTreeDom (IntDomain.Lifted)
-  let tree_test () =
-    print_endline "";
-    print_endline "-> tree_test.start";
-    print_endline "";
-    
-    let t = T.single (IntDomain.Lifted.bot ()) in
-    print_endline ("t = " ^ T.to_content_string t);
-    
-    let t1 = T.map (fun leaf path -> Option.map (fun x -> IntDomain.Lifted.of_int 1L) leaf) @@ T.restrict t 1 true in
-    print_endline ("t1 = " ^ T.to_content_string t1);
-    let t2 = T.map (fun leaf path -> Option.map (fun x -> IntDomain.Lifted.of_int 2L) leaf) @@ T.restrict t 0 false in
-    print_endline ("t2 = " ^ T.to_content_string t2);
-    let joined = T.join t1 t2 in
-    print_endline ("joined = " ^ T.to_content_string joined);
-    let met = T.meet t1 t2 in
-    print_endline ("meet = " ^ T.to_content_string met);
-    print_endline "";
-    
-    let tt = T.map (fun leaf path -> Option.map (fun x -> IntDomain.Lifted.of_int 10L) leaf) @@ T.restrict t 1 true in
-    print_endline ("tt = " ^ T.to_content_string tt);
-    let tf = T.map (fun leaf path -> Option.map (fun x -> IntDomain.Lifted.of_int 10L) leaf) @@ T.restrict t 1 false in
-    print_endline ("tf = " ^ T.to_content_string tf);
-    let joined = T.join tt tf in
-    print_endline ("joined = " ^ T.to_content_string joined);
-    let met = T.meet tt tf in
-    print_endline ("met = " ^ T.to_content_string met);
-    
-    let redundant = VarTree_TF ( 
-      VarTree_Both (VarTree_TF (VarTree_Leaf None, VarTree_Leaf (Some (IntDomain.Lifted.of_int 100L)))),   
-      VarTree_Both (VarTree_TF (VarTree_Leaf None, VarTree_Leaf (Some (IntDomain.Lifted.of_int 100L))))
-      ) in
-    print_endline ("redundant = " ^ T.to_content_string redundant); 
-    let simplified = T.simplify redundant in
-    print_endline ("simplified = " ^ T.to_content_string (T.simplify simplified));
-    
-    let t100 = T.single (IntDomain.Lifted.of_int 100L) in
-    print_endline ("t100 = " ^ T.to_content_string t100);
-    let t200 = T.single (IntDomain.Lifted.of_int 200L) in
-    print_endline ("t200 = " ^ T.to_content_string t200); 
-    print_endline ("t100 <= t200 = " ^ (string_of_bool @@ T.leq t100 t200));
-    print_endline "";
-    
-    let t1 = T.simplify @@ VarTree_TF ( 
-      VarTree_Both (VarTree_TF (VarTree_Leaf None, VarTree_Leaf None)),   
-      VarTree_Both (VarTree_TF (VarTree_Leaf None, VarTree_Leaf (Some (IntDomain.Lifted.of_int 200L))))
-      ) in
-    print_endline ("t1 = " ^ T.to_content_string t1);
-    let t2 = T.simplify @@ VarTree_TF ( 
-      VarTree_Both (VarTree_TF (VarTree_Leaf None, VarTree_Leaf (Some (IntDomain.Lifted.of_int 100L)))),   
-      VarTree_Both (VarTree_TF (VarTree_Leaf None, VarTree_Leaf (Some (IntDomain.Lifted.of_int 200L))))
-      ) in
-    print_endline ("t2 = " ^ T.to_content_string t2);
-    print_endline ("t1 <= t2 = " ^ (string_of_bool @@ T.leq t1 t2));
-    print_endline "";
-    
-    let t1 = T.simplify @@ VarTree_TF ( 
-      VarTree_Both (VarTree_TF (VarTree_Leaf None, VarTree_Leaf None)),   
-      VarTree_Both (VarTree_TF (VarTree_Leaf None, VarTree_Leaf (Some (IntDomain.Lifted.of_int 200L))))
-      ) in
-    print_endline ("t1 = " ^ T.to_content_string t1);
-    let t2 = T.simplify @@ VarTree_TF ( 
-      VarTree_Both (VarTree_Both (VarTree_Leaf (Some (IntDomain.Lifted.of_int 100L)))),   
-      VarTree_Both (VarTree_Both (VarTree_Leaf None))
-      ) in
-    print_endline ("t2 = " ^ T.to_content_string t2);
-    let f x y path = 
-      match (x, y) with
-      | (Some x, Some y) -> print_endline (fs_to_string path ^ " -> (" ^ IntDomain.Lifted.short 80 x ^ ", " ^ IntDomain.Lifted.short 80 y ^ ")")
-      | (Some x, None) -> print_endline (fs_to_string path ^ " -> (" ^ IntDomain.Lifted.short 80 x ^ ", NONE)")
-      | (None, Some y) -> print_endline (fs_to_string path ^ " -> (NONE, " ^ IntDomain.Lifted.short 80 y ^ ")")
-      | (None, None) -> print_endline (fs_to_string path ^ " -> (NONE, NONE)")
-    in
-    T.iter_2 f t1 t2;
-    print_endline "";    
-     
-    print_endline "";
-    print_endline "-> tree_test.end";
-    print_endline ""
-  *)
-  
-  let init () = 
-    (*List.iter (fun n -> print_endline ("PP_VAR: " ^ n)) pp_vars;*)
-    (*tree_test();*) 
-    S.init ()
+  let init () = S.init ()
   let finalize () = S.finalize ()
   
   let startstate v = D.single @@ S.startstate v
@@ -475,8 +400,7 @@ struct
   
   let call_descr func ds = 
     let leaves = D.to_list (fun leaf path -> leaf) ds in
-    let head = List.hd leaves in (* ??? *)
-    S.call_descr func head (* ??? *)
+    S.call_descr func @@ List.hd leaves
     
   let do_spawn ctx (xs : (varState list * varinfo * S.D.t) list) =
     let spawn_one (v : varinfo) (ds : (varState list * S.D.t) list) =
@@ -707,11 +631,6 @@ struct
     result
   
   let enter ctx r f args =
-    
-    (*let str_r = Option.map_default lval_to_string "<None>" r in
-    let str_f = f.vname in
-    let str_args = String.concat " , " @@ List.map exp_to_string args in
-    print_endline ("enter: " ^ str_r ^ " = " ^ str_f ^ "(" ^ str_args  ^ ")");*)
     
     let spawnAcc = ref [] in 
     let splitAcc = ref [] in 
