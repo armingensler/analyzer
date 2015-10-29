@@ -157,9 +157,10 @@ let preprocess_one_file cppflags includes dirName fname =
   in
   
   (* process with pre_pp first *)
-  let command = Config.pre_pp ^ " " ^ fname ^ " " ^ nname ^ ".preppout \"" ^ get_string "ppflags" ^ "\"" in
-  if get_bool "dbg.verbose" || true then print_endline command;
-  system_or_error command;
+  let prepp_infile = fname in
+  let prepp_outfile = nname ^ ".preppout" in
+  let pp_vars = List.map String.trim @@ String.nsplit (get_string "ppflags") "," in
+  PrePreprocessing.pre_preprocess prepp_infile prepp_outfile pp_vars;
   
   (* Preprocess using cpp. *)
   (* ?? what is __BLOCKS__? is it ok to just undef? this? http://en.wikipedia.org/wiki/Blocks_(C_language_extension) *)
