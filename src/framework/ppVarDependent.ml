@@ -3,7 +3,31 @@ open Cil
 open Pretty
 open Analyses
 open GobConfig
-open MyUtil
+
+(* from mCP.ml : BEGIN *)
+
+(** [assoc_split_eq (=) 1 [(1,a);(1,b);(2,x)] = ([a,b],[(2,x)])] *)
+let assoc_split_eq (=) (k:'a) (xs:('a * 'b) list) : ('b list) * (('a * 'b) list) =
+  let rec f a b = function
+    | [] -> a, b
+    | (k',v)::xs when k=k' -> f (v::a) b xs
+    | x::xs -> f a (x::b) xs
+  in
+  f [] [] xs
+  
+(** [group_assoc_eq (=) [(1,a);(1,b);(2,x);(2,y)] = [(1,[a,b]),(2,[x,y])]] *)
+let group_assoc_eq eq (xs: ('a * 'b) list) : ('a * ('b list)) list  =
+  let rec f a = function
+    | [] -> a
+    | (k,v)::xs ->
+      let a', b = assoc_split_eq eq k xs in
+      f ((k,v::a')::a) b
+  in f [] xs
+
+(** [group_assoc [(1,a);(1,b);(2,x);(2,y)] = [(1,[a,b]),(2,[x,y])]] *)
+let group_assoc xs = group_assoc_eq (=) xs
+
+(* from mCP.ml : END *)
 
 type varState =
   | VarState_True
@@ -118,6 +142,7 @@ struct
     in
     impl xtree ytree []
     
+  (* Combines two trees by making tuples of corresponding pairs of leaves. *)
   let rec zip xtree ytree =
     match (xtree, ytree) with
     | (VarTree_TF (xt, xf), VarTree_TF (yt, yf)) -> VarTree_TF (zip xt yt, zip xf yf)
@@ -243,7 +268,7 @@ struct
     
   let rec leq x y = 
     match (x, y) with
-    | (VarTree_Leaf xleaf, VarTree_Leaf yleaf) -> VarTree_Leaf (L.leq xleaf yleaf)
+    | (VarTree_Leaf xleaf, VarTree_Leaf yleaf) -> L.leq xleaf yleaf
     | (VarTree_Leaf xleaf, _) -> failwith "Called VarTreeDom.leq with inconsistent tree heights."
     | (_, VarTree_Leaf yleaf) -> failwith "Called VarTreeDom.leq with inconsistent tree heights."
     | (VarTree_TF (xt, xf), VarTree_TF (yt, yf)) -> leq xt yt && leq xf yf
@@ -273,11 +298,11 @@ struct
     
   let bot () = single (L.bot ())
   
-  let is_bot tree = for_all (fun leaf fs -> L.is_bot leaf) tree
+  let is_bot tree = for_all (fun leaf path -> L.is_bot leaf) tree
   
   let top () = single (L.top ())
   
-  let is_top tree = for_all (fun leaf fs -> L.is_top leaf) tree
+  let is_top tree = for_all (fun leaf path -> L.is_top leaf) tree
   
   let rec joined_fs_path tree path =
     match (tree, path) with
