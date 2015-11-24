@@ -232,39 +232,7 @@ module VarTreeDom (H:TreeHeight) (L:Lattice.S)
 struct
   
   include VarTreePrintable (H) (L)
-  include Lattice.StdCousot (* ??? *)
-  
-  (*let leq xtree ytree =
-    
-    (* Returns if d is <= than all leaves of ytree at path. *)
-    let rec leq_than_all_at_path tree d path = 
-      match tree with
-      
-      | VarTree_TF (t, f) ->
-        begin match path with
-        | VarState_True::xs -> leq_than_all_at_path t d xs
-        | VarState_False::xs -> leq_than_all_at_path f d xs
-        | VarState_Both::xs -> leq_than_all_at_path t d xs && leq_than_all_at_path f d xs
-        | [] -> failwith "Called VarTreeDom.leq with inconsistent tree heights."
-        end
-        
-      | VarTree_Both tf ->
-        begin match path with
-        | VarState_True::xs -> leq_than_all_at_path tf d xs
-        | VarState_False::xs -> leq_than_all_at_path tf d xs
-        | VarState_Both::xs -> leq_than_all_at_path tf d xs
-        | [] -> failwith "Called VarTreeDom.leq with inconsistent tree heights."
-        end        
-      
-      | VarTree_Leaf leaf -> 
-        begin match path with
-        | [] -> L.leq d leaf
-        | _ -> failwith "Called VarTreeDom.leq with inconsistent tree heights."
-        end
-      
-    in
-    let f leaf path = leq_than_all_at_path ytree leaf path in
-    for_all f xtree*)
+  include Lattice.StdCousot
     
   let rec leq x y = 
     match (x, y) with

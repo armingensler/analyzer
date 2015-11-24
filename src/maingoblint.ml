@@ -246,7 +246,7 @@ let merge_preprocessed (cpp_file_names, dirName) =
   let files_AST = List.rev_map Cilfacade.getAST cpp_file_names in
 
   (* remove the files *)
-  (*if not (get_bool "keepcpp") then ignore (Goblintutil.rm_rf dirName);*)
+  if not (get_bool "keepcpp") then ignore (Goblintutil.rm_rf dirName);
 
   let cilout =
     if get_string "dbg.cilout" = "" then Legacy.stderr else Legacy.open_out (get_string "dbg.cilout")
